@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Contact, Task, VoiceLog, Note } from './database.types'
+import type { Contact, Task, VoiceLog, Note, ContactEnrichment, SmartAction } from './database.types'
 
 let supabaseInstance: SupabaseClient | null = null
 
@@ -212,4 +212,39 @@ export async function fetchDashboardStats() {
     overdueTasks: overdueTasks.length,
     totalVoiceInteractions: voiceLogsResult.count || 0,
   }
+}
+
+// Helper functions for contact enrichment
+export async function fetchContactEnrichment(contactId: string): Promise<ContactEnrichment | null> {
+  const { data, error } = await supabase
+    .from('contact_enrichments')
+    .select('*')
+    .eq('contact_id', contactId)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      // No rows returned, enrichment doesn't exist yet
+      return null
+    }
+    throw error
+  }
+  return data as ContactEnrichment
+}
+
+// Helper functions for smart actions
+export async function fetchSmartActions(contactId?: string): Promise<SmartAction[]> {
+  let query = supabase
+    .from('smart_actions')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (contactId) {
+    query = query.eq('contact_id', contactId)
+  }
+
+  const { data, error } = await query
+
+  if (error) throw error
+  return data as SmartAction[]
 }

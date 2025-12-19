@@ -1,0 +1,331 @@
+{
+  "name": "Ekko Voice Assistant with Enrichment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ekko-voice",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Voice Input",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "privateKey",
+        "command": "=export PATH=/opt/homebrew/bin:/Users/alexsolecarretero/.npm-global/bin:$PATH && cd ~/ekko-assistant && claude -p \"Read the skill at ./skills/voice-assistant.md. Process this voice command: {{ $json.body.transcription }}. Return ONLY valid JSON matching the schema in the skill file, no markdown.\" --allowedTools \"Read\""
+      },
+      "name": "Claude Agent",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "fMKN7kCO0QKF4Wry",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $input.first().json.stdout || '';\nlet parsed;\ntry {\n  const jsonMatch = output.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  parsed = {\n    intent: 'error',\n    action: { type: 'none' },\n    response: 'Sorry, I had trouble understanding that.',\n    needs_more_info: false\n  };\n}\nreturn { ...parsed, _transcription: $('Voice Input').first().json.body.transcription };"
+      },
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action.type }}",
+              "value2": "create_contact"
+            }
+          ]
+        }
+      },
+      "name": "Is Contact",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [720, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action.type }}",
+              "value2": "create_task"
+            }
+          ]
+        }
+      },
+      "name": "Is Task",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action.type }}",
+              "value2": "create_note"
+            }
+          ]
+        }
+      },
+      "name": "Is Note",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [720, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json.action.data || {};\nconst colors = ['blue','purple','cyan','green','orange','pink'];\nreturn {\n  first_name: data.first_name || '',\n  last_name: data.last_name || '',\n  company: data.company || null,\n  role: data.role || null,\n  email: data.email || null,\n  phone: data.phone || null,\n  tags: data.tags || [],\n  avatar_color: colors[Math.floor(Math.random()*colors.length)],\n  _intent: $json.intent,\n  _response: $json.response,\n  _transcription: $json._transcription\n};"
+      },
+      "name": "Prepare Contact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zdmwklaewxqgtpbpurll.supabase.co/rest/v1/contacts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "return=representation"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({first_name: $json.first_name, last_name: $json.last_name, company: $json.company, role: $json.role, email: $json.email, phone: $json.phone, tags: $json.tags, avatar_color: $json.avatar_color, enrichment_status: 'pending'}) }}",
+        "options": {}
+      },
+      "name": "Insert Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 0]
+    },
+    {
+      "parameters": {
+        "authentication": "privateKey",
+        "command": "=export PATH=/opt/homebrew/bin:/Users/alexsolecarretero/.npm-global/bin:$PATH && claude -p \"Research {{ $('Prepare Contact').first().json.first_name }} {{ $('Prepare Contact').first().json.last_name }} from {{ $('Prepare Contact').first().json.company || 'their company' }}. Search the web and return ONLY valid JSON with these fields:\n{\n  \\\"linkedin_url\\\": \\\"URL or null\\\",\n  \\\"linkedin_headline\\\": \\\"their LinkedIn headline or null\\\",\n  \\\"company_description\\\": \\\"brief company description or null\\\",\n  \\\"company_industry\\\": \\\"industry or null\\\",\n  \\\"company_size\\\": \\\"employee count range or null\\\",\n  \\\"company_website\\\": \\\"URL or null\\\",\n  \\\"twitter_url\\\": \\\"URL or null\\\",\n  \\\"recent_news\\\": [{\\\"title\\\": \\\"...\\\", \\\"url\\\": \\\"...\\\", \\\"date\\\": \\\"...\\\"}]\n}\nOnly include verified information. No markdown, just pure JSON.\" --allowedTools \"WebSearch,Read\""
+      },
+      "name": "Enrich Contact (SSH)",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [1440, -120],
+      "credentials": {
+        "sshPrivateKey": {
+          "id": "fMKN7kCO0QKF4Wry",
+          "name": "SSH Private Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $input.first().json.stdout || '';\nlet enrichmentData;\ntry {\n  // Try to extract JSON from Claude output\n  const jsonMatch = output.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    enrichmentData = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found in Claude output');\n  }\n} catch (e) {\n  // Fallback to empty enrichment data\n  enrichmentData = {\n    linkedin_url: null,\n    linkedin_headline: null,\n    company_description: null,\n    company_industry: null,\n    company_size: null,\n    company_website: null,\n    twitter_url: null,\n    recent_news: []\n  };\n}\n\n// Get the contact ID from Insert Contact node\nconst contactData = $('Insert Contact').first().json;\nconst contactId = contactData?.[0]?.id || contactData?.id;\n\nreturn {\n  contact_id: contactId,\n  ...enrichmentData\n};"
+      },
+      "name": "Parse Enrichment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1680, -120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zdmwklaewxqgtpbpurll.supabase.co/rest/v1/contact_enrichments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "return=representation"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contact_id: $json.contact_id,\n  linkedin_url: $json.linkedin_url,\n  linkedin_headline: $json.linkedin_headline,\n  company_description: $json.company_description,\n  company_industry: $json.company_industry,\n  company_size: $json.company_size,\n  company_website: $json.company_website,\n  twitter_url: $json.twitter_url,\n  recent_news: $json.recent_news\n}) }}",
+        "options": {}
+      },
+      "name": "Insert Enrichment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1920, -120]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://zdmwklaewxqgtpbpurll.supabase.co/rest/v1/contacts?id=eq.{{ $json.contact_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ enrichment_status: 'completed' }) }}",
+        "options": {}
+      },
+      "name": "Update Contact Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2160, -120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json.action.data || {};\nfunction parseDate(str) {\n  if (!str) return null;\n  const now = new Date();\n  const lower = str.toLowerCase();\n  if (lower === 'today') return now.toISOString();\n  if (lower === 'tomorrow') { now.setDate(now.getDate() + 1); return now.toISOString(); }\n  if (lower.includes('next week')) { now.setDate(now.getDate() + 7); return now.toISOString(); }\n  const parsed = new Date(str);\n  return !isNaN(parsed) ? parsed.toISOString() : null;\n}\nreturn {\n  title: data.title || 'Untitled Task',\n  description: data.description || null,\n  due_date: parseDate(data.due_date),\n  priority: data.priority || 'medium',\n  category: data.category || 'reminder',\n  is_completed: false,\n  related_contact_name: data.related_contact_name || null,\n  _intent: $json.intent,\n  _response: $json.response,\n  _transcription: $json._transcription\n};"
+      },
+      "name": "Prepare Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zdmwklaewxqgtpbpurll.supabase.co/rest/v1/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "return=representation"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({title: $json.title, description: $json.description, due_date: $json.due_date, priority: $json.priority, category: $json.category, is_completed: $json.is_completed, related_contact_name: $json.related_contact_name}) }}",
+        "options": {}
+      },
+      "name": "Insert Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json.action.data || {};\nreturn {\n  title: data.title || 'Untitled Note',\n  content: data.content || '',\n  color: data.color || 'yellow',\n  is_pinned: false,\n  _intent: $json.intent,\n  _response: $json.response,\n  _transcription: $json._transcription\n};"
+      },
+      "name": "Prepare Note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://zdmwklaewxqgtpbpurll.supabase.co/rest/v1/notes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkbXdrbGFld3hxZ3RwYnB1cmxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5NTEwOTYsImV4cCI6MjA4MTUyNzA5Nn0.k8JN7LQ1YrGO0Rnv5QXChyvLTw2EOMK36dy6GdCk9cY"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "return=representation"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({title: $json.title, content: $json.content, color: $json.color, is_pinned: $json.is_pinned}) }}",
+        "options": {}
+      },
+      "name": "Insert Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "let intent, response, transcription, created_id = null;\n\ntry {\n  const contact = $('Insert Contact').first().json;\n  intent = $('Prepare Contact').first().json._intent;\n  response = $('Prepare Contact').first().json._response;\n  transcription = $('Prepare Contact').first().json._transcription;\n  created_id = contact?.[0]?.id || contact?.id;\n} catch(e) {}\n\ntry {\n  const task = $('Insert Task').first().json;\n  intent = $('Prepare Task').first().json._intent;\n  response = $('Prepare Task').first().json._response;\n  transcription = $('Prepare Task').first().json._transcription;\n  created_id = task?.[0]?.id || task?.id;\n} catch(e) {}\n\ntry {\n  const note = $('Insert Note').first().json;\n  intent = $('Prepare Note').first().json._intent;\n  response = $('Prepare Note').first().json._response;\n  transcription = $('Prepare Note').first().json._transcription;\n  created_id = note?.[0]?.id || note?.id;\n} catch(e) {}\n\ntry {\n  const parsed = $('Parse Response').first().json;\n  if (!intent) {\n    intent = parsed.intent;\n    response = parsed.response;\n    transcription = parsed._transcription;\n  }\n} catch(e) {}\n\nreturn {\n  success: true,\n  intent: intent,\n  response: response,\n  transcription: transcription,\n  created_id: created_id\n};"
+      },
+      "name": "Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    }
+  ],
+  "connections": {
+    "Voice Input": {
+      "main": [[{"node": "Claude Agent", "type": "main", "index": 0}]]
+    },
+    "Claude Agent": {
+      "main": [[{"node": "Parse Response", "type": "main", "index": 0}]]
+    },
+    "Parse Response": {
+      "main": [[
+        {"node": "Is Contact", "type": "main", "index": 0},
+        {"node": "Is Task", "type": "main", "index": 0},
+        {"node": "Is Note", "type": "main", "index": 0}
+      ]]
+    },
+    "Is Contact": {
+      "main": [
+        [{"node": "Prepare Contact", "type": "main", "index": 0}],
+        [{"node": "Final Response", "type": "main", "index": 0}]
+      ]
+    },
+    "Is Task": {
+      "main": [
+        [{"node": "Prepare Task", "type": "main", "index": 0}],
+        [{"node": "Final Response", "type": "main", "index": 0}]
+      ]
+    },
+    "Is Note": {
+      "main": [
+        [{"node": "Prepare Note", "type": "main", "index": 0}],
+        [{"node": "Final Response", "type": "main", "index": 0}]
+      ]
+    },
+    "Prepare Contact": {
+      "main": [[{"node": "Insert Contact", "type": "main", "index": 0}]]
+    },
+    "Insert Contact": {
+      "main": [[
+        {"node": "Final Response", "type": "main", "index": 0},
+        {"node": "Enrich Contact (SSH)", "type": "main", "index": 0}
+      ]]
+    },
+    "Enrich Contact (SSH)": {
+      "main": [[{"node": "Parse Enrichment", "type": "main", "index": 0}]]
+    },
+    "Parse Enrichment": {
+      "main": [[{"node": "Insert Enrichment", "type": "main", "index": 0}]]
+    },
+    "Insert Enrichment": {
+      "main": [[{"node": "Update Contact Status", "type": "main", "index": 0}]]
+    },
+    "Prepare Task": {
+      "main": [[{"node": "Insert Task", "type": "main", "index": 0}]]
+    },
+    "Insert Task": {
+      "main": [[{"node": "Final Response", "type": "main", "index": 0}]]
+    },
+    "Prepare Note": {
+      "main": [[{"node": "Insert Note", "type": "main", "index": 0}]]
+    },
+    "Insert Note": {
+      "main": [[{"node": "Final Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

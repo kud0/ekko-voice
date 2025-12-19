@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { fetchContacts, createContact, deleteContact, updateContact } from '@/lib/supabase'
 import { Contact } from '@/lib/database.types'
+import ContactEnrichmentPanel from '@/components/ContactEnrichmentPanel'
 import { format, parseISO } from 'date-fns'
 
 export default function ContactsPage() {
@@ -351,6 +352,9 @@ function ContactDetailModal({
               <p className="text-white whitespace-pre-wrap">{contact.notes}</p>
             </div>
           )}
+
+          {/* Enrichment Panel */}
+          <ContactEnrichmentPanel contactId={contact.id} />
 
           {contact.tags && contact.tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
